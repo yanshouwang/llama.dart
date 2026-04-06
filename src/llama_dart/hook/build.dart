@@ -11,6 +11,7 @@ void main(List<String> args) async {
       final builder = CMakeBuilder(
         url: 'git@github.com:ggml-org/llama.cpp.git',
         tag: 'b8611',
+        name: 'llama',
         assetName: 'src/ffi.g.dart',
       );
       await builder.run(input: input, output: output);

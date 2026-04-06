@@ -3,7 +3,9 @@ import 'dart:io';
 import 'package:code_assets/code_assets.dart';
 import 'package:hooks/hooks.dart';
 import 'package:logging/src/logger.dart';
+import 'package:path/path.dart' as path;
 
+import 'link_mode.dart';
 import 'logger.dart';
 import 'tools.dart';
 import 'utils/run_process.dart';
@@ -11,9 +13,15 @@ import 'utils/run_process.dart';
 final class CMakeBuilder implements Builder {
   final String url;
   final String tag;
+  final String name;
   final String assetName;
 
-  CMakeBuilder({required this.url, required this.tag, required this.assetName});
+  CMakeBuilder({
+    required this.url,
+    required this.tag,
+    required this.name,
+    required this.assetName,
+  });
 
   @override
   Future<void> run({
@@ -39,14 +47,15 @@ final class CMakeBuilder implements Builder {
     await Directory.fromUri(dstDir).create(recursive: true);
     await Directory.fromUri(outDir).create(recursive: true);
 
-    final isInsideGitDir = await runProcess(
+    final topLevel = await runProcess(
       executable: git.uri,
-      arguments: ['rev-parse', '--is-inside-git-dir'],
+      arguments: ['rev-parse', '--show-toplevel'],
       workingDirectory: srcDir,
       logger: logger,
       throwOnUnexpectedExitCode: false,
-    ).then((e) => bool.parse(e.stdout.trim()));
-    if (!isInsideGitDir) {
+    ).then((e) => e.stdout.trim());
+    logger.info('topLevel: $topLevel');
+    if (Uri.directory(topLevel) != srcDir) {
       await runProcess(
         executable: git.uri,
         arguments: ['clone', url, '.'],
@@ -93,17 +102,33 @@ final class CMakeBuilder implements Builder {
       throwOnUnexpectedExitCode: true,
     );
 
+    final linkMode = getLinkMode(input.config.code.linkModePreference);
     final libDir = outDir.resolve('lib/');
-    final libs = await Directory.fromUri(libDir).list().toList();
-    for (var lib in libs) {
-      logger.info('lib: ${lib.uri.toFilePath()}');
+    final libName = input.config.code.targetOS.libraryFileName(name, linkMode);
+    final libExt = path.extension(libName);
+    final libAsset = CodeAsset(
+      package: input.packageName,
+      name: assetName,
+      linkMode: linkMode,
+      file: libDir.resolve(libName),
+    );
+    output.assets.code.add(libAsset);
+
+    final entities = await Directory.fromUri(libDir).list().toList();
+    final files = entities.whereType<File>().toList();
+    for (final file in files) {
+      final filePath = file.path;
+      final fileName = path.basename(filePath);
+      final fileNameWithoutExt = path.basenameWithoutExtension(filePath);
+      final fileExt = path.extension(filePath);
+      if (fileName == libName || fileExt != libExt) continue;
+      final fileAsset = CodeAsset(
+        package: input.packageName,
+        name: 'src/ffi/$fileNameWithoutExt.g.dart',
+        linkMode: linkMode,
+        file: file.uri,
+      );
+      output.assets.code.add(fileAsset);
     }
-    // output.assets.code.addAll([
-    //   CodeAsset(
-    //     package: input.packageName,
-    //     name: assetName,
-    //     linkMode: DynamicLoadingBundled(),
-    //   ),
-    // ]);
   }
 }
