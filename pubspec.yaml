@@ -4,5 +4,3 @@ environment:
   sdk: ^3.6.0
 workspace:
   - src/llama_dart
-  - src/llama_flutter
-  - src/llama_flutter/example
